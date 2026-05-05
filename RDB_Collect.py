@@ -20,7 +20,7 @@ def query_regulomedb(rsid, assembly="GRCh38"):
     return response.json()
 
 if __name__ == "__main__":
-    rsid = "rs8062446"
+    rsid = "rs6589939"
     assembly = "GRCh38"
     data = query_regulomedb(rsid, assembly)
 
@@ -34,3 +34,11 @@ if __name__ == "__main__":
             if cell_type == "B cell":
                 chrom_state = record['value']
                 print(cell_type, chrom_state)
+
+
+from Mixer import LDlinkClient as Lead
+if __name__ == "__main__":
+    client = Lead(token="f46027d576ea")
+    rsid = "rs6589939"
+    df = client.get_ldproxy(rsid)
+    print(df.head())
