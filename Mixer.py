@@ -37,14 +37,15 @@ class Region:
         df = self.ldlink_to_dataframe(response.text)
         Coord = df[df["R2"] >= 0.5]["Coord"]
         RS_Number = df[df["R2"] >= 0.5]["RS_Number"]
-        RegDB_Coord = [f"{c.split(':')[0]}:{int(c.split(':')[1])-1}-{c.split(':')[1]}" for c in Coord]
-        return RegDB_Coord, RS_Number
-    
+        return Coord, RS_Number
+
     def query_regulomedb(self, coord, assembly="GRCh38"):
         url = "https://regulomedb.org/regulome-summary/"
+        
+        RegDB_Coord = [f"{c.split(':')[0]}:{int(c.split(':')[1])-1}-{c.split(':')[1]}" for c in coord]
 
         params = {
-            "regions": coord,
+            "regions": RegDB_Coord,
             "genome": assembly,
             "maf": "0.01"
         }
@@ -59,3 +60,19 @@ class Region:
 
         return response.json()
     
+    def query_ensembl(self, coord):
+        chrom, pos = coord.replace("chr", "").split(":")
+
+        server = "https://rest.ensembl.org"
+        ext = f"/overlap/region/human/{chrom}:{pos}-{pos}?feature=gene"
+
+        headers = {"Content-Type": "application/json"}
+
+        response = requests.get(server + ext, headers=headers)
+        response.raise_for_status()
+        genes = response.json()
+
+        for gene in genes:
+            print(gene["id"], gene["external_name"], gene["biotype"])
+
+        return genes["id"] if genes else None
