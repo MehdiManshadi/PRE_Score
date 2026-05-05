@@ -2,8 +2,9 @@ import requests
 import os
 import pandas as pd
 from io import StringIO
+import requests
 
-class LDlinkClient:
+class Region:
     BASE_URL = "https://ldlink.nih.gov/LDlinkRest/ldproxy"
 
     def __init__(self, token=None):
@@ -17,7 +18,7 @@ class LDlinkClient:
     
     def get_ldproxy(self, rsid, population="CEU", window=50000,
                     collapse_transcripts=True, annotation="RegulomeDB",
-                    ld_measure="R2"):
+                    ld_measure="R2", genome_build="grch38"):
 
         params = {
             "var": rsid,
@@ -27,12 +28,34 @@ class LDlinkClient:
             "collapsed": "yes" if collapse_transcripts else "no",
             "annot": annotation,
             "token": self.token,
+            "genome_build": genome_build
         }
 
         response = requests.get(self.BASE_URL, params=params, timeout=30)
         response.raise_for_status()
         
         df = self.ldlink_to_dataframe(response.text)
-        LDLinked = df[df["R2"] <= 0.5]["Coord"]
+        Coord = df[df["R2"] >= 0.5]["Coord"]
+        RS_Number = df[df["R2"] >= 0.5]["RS_Number"]
+        RegDB_Coord = [f"{c.split(':')[0]}:{int(c.split(':')[1])-1}-{c.split(':')[1]}" for c in Coord]
+        return RegDB_Coord, RS_Number
+    
+    def query_regulomedb(self, coord, assembly="GRCh38"):
+        url = "https://regulomedb.org/regulome-summary/"
 
-        return LDLinked
+        params = {
+            "regions": coord,
+            "genome": assembly,
+            "maf": "0.01"
+        }
+
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0"
+        }
+
+        response = requests.get(url, params=params, headers=headers)
+        response.raise_for_status()
+
+        return response.json()
+    
