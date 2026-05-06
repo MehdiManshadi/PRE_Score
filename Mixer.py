@@ -42,7 +42,7 @@ class Region:
     def query_regulomedb(self, coord, assembly="GRCh38"):
         url = "https://regulomedb.org/regulome-summary/"
         
-        RegDB_Coord = [f"{c.split(':')[0]}:{int(c.split(':')[1])-1}-{c.split(':')[1]}" for c in coord]
+        RegDB_Coord = f"{coord.split(':')[0]}:{int(coord.split(':')[1])-1}-{coord.split(':')[1]}"
 
         params = {
             "regions": RegDB_Coord,
@@ -75,4 +75,42 @@ class Region:
         for gene in genes:
             print(gene["id"], gene["external_name"], gene["biotype"])
 
-        return genes["id"] if genes else None
+        return [gene["external_name"] for gene in genes] if genes else None
+    
+    def count_experiments(self, data, cell_type):
+
+        histone_marks = {
+            "H2az": +1,  # associated with regulatory elements
+            "H3k4me1": +1,  # enhancer associated
+            "H3k04me1": +1,  # enhancer associated
+            "H3k4me2": +1,  # promoter/enhancer
+            "H3k04me2": +1,  # promoter/enhancer
+            "H3k4me3": +1,  # promoters/transcription start
+            "H3k04me3": +1,  # promoters/transcription start
+            "H3k04me3Ohtam": +1,  # assume promoter/activating
+            "H3k9ac": +1,  # active regulatory elements, promoters
+            "H3k09ac": +1,  # active regulatory elements, promoters
+            "H3k9me1": 0,  # preference for 5' end, neutral
+            "H3k09me1": 0,  # preference for 5' end, neutral
+            "H3k9me3": -1,  # repressive heterochromatin
+            "H3k09me3": -1,  # repressive heterochromatin
+            "H3k27ac": +1,  # active enhancers/promoters
+            "H3k27me3": -1,  # polycomb repression
+            "H3k36me3": 0,  # elongation mark, neutral
+            "H3k79me2": 0,  # transcription-associated, neutral
+            "H4k20me1": 0   # preference for 5' end, neutral
+        }
+
+        for experiment in data["@graph"]:
+            biosample = experiment.get("biosample_ontology", {})
+            term_name = biosample.get("term_name")
+
+            if term_name == cell_type and experiment.get("target_label") is not None:
+                print(cell_type, experiment.get("method"),experiment["target_label"])
+
+            if experiment.get("method") == "chromatin state":
+                if term_name == cell_type:
+                    chrom_state = experiment.get("value")
+                    method = experiment.get("method")
+                    print(cell_type, method, chrom_state)
+            
