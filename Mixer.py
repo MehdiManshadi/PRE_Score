@@ -78,39 +78,89 @@ class Region:
         return [gene["external_name"] for gene in genes] if genes else None
     
     def count_experiments(self, data, cell_type):
+        score = 0
+        ChIP_Seq_targets = []
+        n_experiments = 0
 
         histone_marks = {
             "H2az": +1,  # associated with regulatory elements
-            "H3k4me1": +1,  # enhancer associated
-            "H3k04me1": +1,  # enhancer associated
-            "H3k4me2": +1,  # promoter/enhancer
-            "H3k04me2": +1,  # promoter/enhancer
-            "H3k4me3": +1,  # promoters/transcription start
-            "H3k04me3": +1,  # promoters/transcription start
-            "H3k04me3Ohtam": +1,  # assume promoter/activating
-            "H3k9ac": +1,  # active regulatory elements, promoters
-            "H3k09ac": +1,  # active regulatory elements, promoters
-            "H3k9me1": 0,  # preference for 5' end, neutral
-            "H3k09me1": 0,  # preference for 5' end, neutral
-            "H3k9me3": -1,  # repressive heterochromatin
-            "H3k09me3": -1,  # repressive heterochromatin
-            "H3k27ac": +1,  # active enhancers/promoters
-            "H3k27me3": -1,  # polycomb repression
-            "H3k36me3": 0,  # elongation mark, neutral
-            "H3k79me2": 0,  # transcription-associated, neutral
-            "H4k20me1": 0   # preference for 5' end, neutral
+            "H3K4me1": +1,  # enhancer associated
+            "H3K04me1": +1,  # enhancer associated
+            "H3K4me2": +1,  # promoter/enhancer
+            "H3K04me2": +1,  # promoter/enhancer
+            "H3K4me3": +1,  # promoters/transcription start
+            "H3K04me3": +1,  # promoters/transcription start
+            "H3K04me3Ohtam": +1,  # assume promoter/activating
+            "H3K9ac": +1,  # active regulatory elements, promoters
+            "H3K09ac": +1,  # active regulatory elements, promoters
+            "H3K9me1": 0,  # preference for 5' end, neutral
+            "H3K09me1": 0,  # preference for 5' end, neutral
+            "H3K9me3": -1,  # repressive heterochromatin
+            "H3K09me3": -1,  # repressive heterochromatin
+            "H3K27ac": +1,  # active enhancers/promoters
+            "H3K27me3": -1,  # polycomb repression
+            "H3K36me3": 0,  # elongation mark, neutral
+            "H3K79me2": 0,  # transcription-associated, neutral
+            "H4K20me1": 0   # preference for 5' end, neutral
+        }
+
+        chromatin_state_scores = {
+            'TssA': 1,           # Active TSS
+            'TssFlnk': 1,        # Flanking TSS (15-state model)
+            'TssFlnkU': 1,       # Flanking TSS Upstream
+            'TssFlnkD': 1,       # Flanking TSS Downstream
+            'Tx': 1,             # Strong transcription
+            'TxWk': 1,           # Weak transcription
+            'EnhG1': 1,          # Genic enhancer 1
+            'EnhG2': 1,          # Genic enhancer 2
+            'EnhA1': 1,          # Active Enhancer 1
+            'EnhA2': 1,          # Active Enhancer 2
+            'EnhWk': 1,          # Weak Enhancer
+            'ZNF/Rpts': 0,       # ZNF genes & repeats
+            'Het': -1,           # Heterochromatin
+            'TssBiv': 0,         # Bivalent/Poised TSS
+            'EnhBiv': 0,         # Bivalent Enhancer
+            'ReprPC': -1,        # Repressed Polycomb
+            'ReprPCWk': -1,      # Weak Repressed Polycomb
+            'Quies': 0           # Quiescent/Low signal
         }
 
         for experiment in data["@graph"]:
+
             biosample = experiment.get("biosample_ontology", {})
-            term_name = biosample.get("term_name")
+            term_name = biosample.get("term_name")     
 
-            if term_name == cell_type and experiment.get("target_label") is not None:
+            if term_name == cell_type:
+                dataset_rel = experiment.get('dataset_rel')
+                dataset_rel = dataset_rel.strip("/").split("/")[-1]
+                print("Dataset:", dataset_rel)           
+
+            if experiment.get("method") == "ChIP-seq" and term_name == cell_type:
+                target = experiment.get("target_label")
+                ChIP_Seq_targets.append(target)
                 print(cell_type, experiment.get("method"),experiment["target_label"])
-
-            if experiment.get("method") == "chromatin state":
-                if term_name == cell_type:
-                    chrom_state = experiment.get("value")
-                    method = experiment.get("method")
-                    print(cell_type, method, chrom_state)
             
+            if experiment.get("method") == "Histone ChIP-seq" and term_name == cell_type:
+                target = experiment.get("target_label")
+                score += histone_marks[target]
+                n_experiments += 1  # Count the number of histone ChIP-seq experiments for this cell type
+                print(cell_type, experiment.get("method"),experiment["target_label"])
+                    
+            if experiment.get("method") == "chromatin state" and term_name == cell_type:
+                chrom_state = experiment.get("value")
+                score = chromatin_state_scores.get(chrom_state, 0) + score
+                n_experiments += 1  # Count the number of chromatin state experiments for this cell type
+                print(cell_type, experiment.get("method"), chrom_state)
+
+            if experiment.get("method") == "DNase-seq" and term_name == cell_type:
+                value = experiment.get("value")
+                # n_experiments += 1  # Count the number of chromatin state experiments for this cell type
+                print(cell_type, experiment.get("method"), value)
+
+            if experiment.get("method") == "ATAC-seq" and term_name == cell_type:
+                value = experiment.get("value")
+                # n_experiments += 1  # Count the number of chromatin state experiments for this cell type
+                print(cell_type, experiment.get("method"), value)
+
+
+        return score, n_experiments, ChIP_Seq_targets 

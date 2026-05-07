@@ -9,6 +9,11 @@ for c in Coord:
     print(c, "-------------------------------------")
     data = client.query_regulomedb(c)
     gene = client.query_ensembl(c)
-    client.count_experiments(data, cell_type="B cell")
+    score, n_experiments, ChIP_Seq_targets = client.count_experiments(data, cell_type="B cell")
+    print(f"RegulomeDB Score: {score}, Number of Experiments: {n_experiments}")
+    print(f"ChIP-Seq Targets: {', '.join(ChIP_Seq_targets)}")
+
+#print(f"RegulomeDB Score: {score}, Number of Experiments: {n_experiments}")
+#print(f"ChIP-Seq Targets: {', '.join(ChIP_Seq_targets)}")
 
 
