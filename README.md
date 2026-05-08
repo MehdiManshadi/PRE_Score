@@ -12,19 +12,6 @@ This tool implements the scoring framework described in:
 
 ---
 
-## Table of Contents
-
-- [Background](#background)
-- [Workflow Overview](#workflow-overview)
-- [Installation](#installation)
-- [Input Format](#input-format)
-- [Usage](#usage)
-- [Output](#output)
-- [RegulomeDB API Response Structure](#regulomedb-api-response-structure)
-- [Citation](#citation)
-
----
-
 ## Background
 
 GWAS studies identify SNPs associated with disease, but these variants are often in non-coding regions. Interpreting their functional impact requires linking them to regulatory elements and target genes in a cell-type-specific manner.
