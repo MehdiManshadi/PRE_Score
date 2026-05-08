@@ -3,22 +3,26 @@ import os
 import pandas as pd
 from io import StringIO
 import requests
+from datetime import datetime
 
 class Region:
     BASE_URL = "https://ldlink.nih.gov/LDlinkRest/ldproxy"
 
-    def __init__(self, token=None):
+    def __init__(self, token=None, assembly="GRCh38"):
         self.token = token or os.getenv("LDLINK_TOKEN")
+        self.assembly = assembly
         if not self.token:
             raise ValueError("LDlink API token required")
         
-    def ldlink_to_dataframe(self,response_text):
+    def ldlink_to_dataframe(self, response_text):
         df = pd.read_csv(StringIO(response_text), sep="\t")
         return df
     
     def get_ldproxy(self, rsid, population="CEU", window=50000,
                     collapse_transcripts=True, annotation="RegulomeDB",
-                    ld_measure="R2", genome_build="grch38"):
+                    ld_measure="R2"):
+
+        self.rsid = rsid
 
         params = {
             "var": rsid,
@@ -28,7 +32,7 @@ class Region:
             "collapsed": "yes" if collapse_transcripts else "no",
             "annot": annotation,
             "token": self.token,
-            "genome_build": genome_build
+            "genome_build": self.assembly.lower()
         }
 
         response = requests.get(self.BASE_URL, params=params, timeout=30)
@@ -39,14 +43,15 @@ class Region:
         RS_Number = df[df["R2"] >= 0.5]["RS_Number"]
         return Coord, RS_Number
 
-    def query_regulomedb(self, coord, assembly="GRCh38"):
+    def query_regulomedb(self):
+        
         url = "https://regulomedb.org/regulome-summary/"
         
-        RegDB_Coord = f"{coord.split(':')[0]}:{int(coord.split(':')[1])-1}-{coord.split(':')[1]}"
+        RegDB_Coord = f"{self.coord.split(':')[0]}:{int(self.coord.split(':')[1])-1}-{self.coord.split(':')[1]}"
 
         params = {
             "regions": RegDB_Coord,
-            "genome": assembly,
+            "genome": self.assembly,
             "maf": "0.01"
         }
 
@@ -62,25 +67,36 @@ class Region:
     
     def query_ensembl(self, coord):
         chrom, pos = coord.replace("chr", "").split(":")
+        if self.assembly == "GRCh37":
+            server = "https://grch37.rest.ensembl.org"
+        elif self.assembly == "GRCh38": 
+            server = "https://rest.ensembl.org"
 
-        server = "https://rest.ensembl.org"
         ext = f"/overlap/region/human/{chrom}:{pos}-{pos}?feature=gene"
-
         headers = {"Content-Type": "application/json"}
 
         response = requests.get(server + ext, headers=headers)
         response.raise_for_status()
         genes = response.json()
 
-        for gene in genes:
-            print(gene["id"], gene["external_name"], gene["biotype"])
+        #for gene in genes:
+        #   print(gene["id"], gene["external_name"], gene["biotype"])
 
-        return [gene["external_name"] for gene in genes] if genes else None
+        return [gene["external_name"] for gene in genes if gene.get("external_name")] if genes else None
     
-    def count_experiments(self, data, cell_type):
+    def count_experiments(self, cell_type):
         score = 0
         ChIP_Seq_targets = []
+        Dataset = []
         n_experiments = 0
+        genes = self.query_ensembl(self.coord)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"regulomedb_experiments_{timestamp}.txt"
+        
+        if not genes:
+            return [], [], [], []
+        
+        data = self.query_regulomedb()
 
         histone_marks = {
             "H2az": +1,  # associated with regulatory elements
@@ -124,43 +140,59 @@ class Region:
             'ReprPCWk': -1,      # Weak Repressed Polycomb
             'Quies': 0           # Quiescent/Low signal
         }
+        with open(filename, "a") as f:
+            for experiment in data["@graph"]:
 
-        for experiment in data["@graph"]:
+                biosample = experiment.get("biosample_ontology", {})
+                term_name = biosample.get("term_name")    
 
-            biosample = experiment.get("biosample_ontology", {})
-            term_name = biosample.get("term_name")     
+                if term_name == ["ChIP-seq"] or term_name == ["Histone ChIP-seq"] or term_name == ["chromatin state"] or term_name == ["DNase-seq"] or term_name == ["ATAC-seq"]:
+                    print("No cell type information for this experiment, skipping...")
+                    print("================================================================================-====================")
+                    ValueError("No cell type information for this experiment, skipping...")
 
-            if term_name == cell_type:
-                dataset_rel = experiment.get('dataset_rel')
-                dataset_rel = dataset_rel.strip("/").split("/")[-1]
-                print("Dataset:", dataset_rel)           
+                if term_name == cell_type:
+                    dataset_rel = experiment.get('dataset_rel')
+                    dataset_rel = dataset_rel.strip("/").split("/")[-1]
+                    Dataset.append(dataset_rel)   
+                
 
-            if experiment.get("method") == "ChIP-seq" and term_name == cell_type:
-                target = experiment.get("target_label")
-                ChIP_Seq_targets.append(target)
-                print(cell_type, experiment.get("method"),experiment["target_label"])
-            
-            if experiment.get("method") == "Histone ChIP-seq" and term_name == cell_type:
-                target = experiment.get("target_label")
-                score += histone_marks[target]
-                n_experiments += 1  # Count the number of histone ChIP-seq experiments for this cell type
-                print(cell_type, experiment.get("method"),experiment["target_label"])
+                    if experiment.get("method") == "ChIP-seq":
+                        target = experiment.get("target_label")
+                        ChIP_Seq_targets.append(target)
+                        #print(cell_type, experiment.get("method"),experiment["target_label"])
+                        for gene in genes:
+                            f.write(f"{self.rsid},{gene}, {dataset_rel}, {self.coord}, {cell_type},{experiment.get('method')},{experiment.get('target_label')}, {""}\n")
                     
-            if experiment.get("method") == "chromatin state" and term_name == cell_type:
-                chrom_state = experiment.get("value")
-                score = chromatin_state_scores.get(chrom_state, 0) + score
-                n_experiments += 1  # Count the number of chromatin state experiments for this cell type
-                print(cell_type, experiment.get("method"), chrom_state)
+                    if experiment.get("method") == "Histone ChIP-seq":
+                        target = experiment.get("target_label")
+                        score += histone_marks[target]
+                        n_experiments += 1  # Count the number of histone ChIP-seq experiments for this cell type
+                        #print(cell_type, experiment.get("method"),experiment["target_label"])
+                        for gene in genes:
+                            f.write(f"{self.rsid},{gene}, {dataset_rel}, {self.coord},{cell_type},{experiment.get('method')},{experiment.get('target_label')}, {histone_marks[target]}\n")
 
-            if experiment.get("method") == "DNase-seq" and term_name == cell_type:
-                value = experiment.get("value")
-                # n_experiments += 1  # Count the number of chromatin state experiments for this cell type
-                print(cell_type, experiment.get("method"), value)
+                    if experiment.get("method") == "chromatin state":
+                        chrom_state = experiment.get("value")
+                        score = chromatin_state_scores.get(chrom_state, 0) + score
+                        n_experiments += 1  # Count the number of chromatin state experiments for this cell type
+                        #print(cell_type, experiment.get("method"), chrom_state)
+                        for gene in genes:
+                            f.write(f"{self.rsid},{gene}, {dataset_rel}, {self.coord}, {cell_type},{experiment.get('method')}, {chrom_state}, {chromatin_state_scores.get(chrom_state, 0)}\n")
 
-            if experiment.get("method") == "ATAC-seq" and term_name == cell_type:
-                value = experiment.get("value")
-                # n_experiments += 1  # Count the number of chromatin state experiments for this cell type
-                print(cell_type, experiment.get("method"), value)
+                    if experiment.get("method") == "DNase-seq":
+                        value = experiment.get("value")
+                        # n_experiments += 1  # Count the number of chromatin state experiments for this cell type
+                        #print(cell_type, experiment.get("method"), value)
+                        for gene in genes:
+                            f.write(f"{self.rsid},{gene}, {dataset_rel}, {self.coord}, {cell_type},{experiment.get('method')}, {value}, {''}\n")
+
+                    if experiment.get("method") == "ATAC-seq":
+                        value = experiment.get("value")
+                        # n_experiments += 1  # Count the number of chromatin state experiments for this cell type
+                        #print(cell_type, "\t", experiment.get("method"), "\t", value)
+                        for gene in genes:
+                            f.write(f"{self.rsid},{gene}, {dataset_rel}, {self.coord}, {cell_type},{experiment.get('method')}, {value}, {''}\n")
 
 
-        return score, n_experiments, ChIP_Seq_targets 
+        return score, n_experiments, ChIP_Seq_targets, set(Dataset)
